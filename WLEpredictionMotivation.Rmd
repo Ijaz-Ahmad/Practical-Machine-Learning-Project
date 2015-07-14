@@ -1,0 +1,310 @@
+---
+title: "Weight Lifting Exercises - Class Prediction"
+author: "Ijaz Ahmad"
+date: "14 July 2015"
+output: html_document
+---
+
+## Executive Summary
+
+- **The human activity recognition research has traditionally focused on discriminating between different activities, i.e. to predict "which" activity was performed at a specific point in time. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).**
+
+- **Our goal is to build a prediction model to identify the class of each observation based on the activity data recorded by researchers ("pml-training.csv" in our project). The prediction model built by us will be tested on each case of the data set "pml-testing.csv".**
+
+## Get/Load Data
+
+- Download data from the specified URL and load into the working directory.
+
+```{r Get.Load.Data, cache=TRUE, echo=FALSE}
+## Download data
+
+## download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+##               destfile = "~/Documents/Data/pml-training.csv")
+## download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+##               destfile = "~/Documents/Data/pml-testing.csv")
+
+## Load data
+
+pml.training <- read.csv("~/Documents/Data/pml-training.csv")
+pml.testing <- read.csv("~/Documents/Data/pml-testing.csv")
+```
+- Data set "pml-training" consists of `r dim(pml.training)[1]` observations and `r dim(pml.training)[2]` variables with only `r sum(complete.cases(pml.training))` complete cases.
+
+## Exploratory Data Analysis
+
+```{r Packages, echo=FALSE, message=FALSE}
+## Load required packages
+
+library(tidyr); library(caret); library(doMC)
+registerDoMC(cores = 4)
+```
+- Load packages "caret", "tidyr" and "doMC".
+- Register number of cores.
+- Find near zero variance variables in "pml.training".
+- Subset the training and testing data sets excluding the variables having near zero variance. This will help reducing execution time of algorithm and the noise in prediction process.
+- Get rid of variables "X" and "user_name" being the row/observation identifier and name of the participant. Both the variables have no relationship with the prediction of outcome variable and will just add noise and bias in addition to higher execution time of the prediction model.
+- Get rid of variables mostly having nil information ("NA"). The exclusion of such variables will improve our prediction accuracy a lot; because out of total number of `r dim(pml.training)[1]` observations we just have `r sum(complete.cases(pml.training))` complete cases. Also get rid of such variables from data set "pml.testing".
+
+```{r Data.Analysis, cache=TRUE, echo=FALSE}
+## Find Near Zoro Variance Variables
+
+NZVs <- nearZeroVar(pml.training, saveMetrics = TRUE)
+
+## subset the training and testing data set excluding the variables having near zero variance
+
+pml.training <- pml.training[, which(NZVs$nzv == "FALSE")]
+pml.testing <- pml.testing[, which(NZVs$nzv == "FALSE")]
+
+## Get rid of variables "X" and "user_name" row/observaion identifier and name of the participant.
+
+pml.training <- pml.training[, -c(1,2)]
+pml.testing <- pml.testing[, -c(1,2)]
+
+## Get rid of variables mostly having NAs
+
+i = 1
+NAsCount <- data.frame()
+for(i in 1:dim(pml.training)[2]) {
+        NAsCount <- rbind(NAsCount, length(which(is.na(pml.training[,i]))))
+}
+pml.training <- pml.training[, which(NAsCount == 0)]
+pml.testing <- pml.testing[, which(NAsCount == 0)]
+```
+
+## Building our model
+
+- We are now left with `r dim(pml.training)[1]` observations, `r dim(pml.training)[2]` variables with `r sum(complete.cases(pml.training))` complete cases to build our prediction model.
+- Extract numeric values from all variables of both data sets except the outcome variable.
+- Create training, testing and validation data sets by partitioning "pml.training".
+- Build three models on data set training
+        (i)   Linear Discriminant Analysis Model "lda",
+        (ii)  Random Forests Model "rf" and
+        (iii) Boosting with trees Model "gbm".
+- Combine the predictions of all three models along with the the true outcome on data set testing and fit a model on the combined data set.
+```{r Partitioning, cache=TRUE, echo=FALSE}
+## extract numeric values of all variables of data
+
+i = 1
+n <- dim(pml.training)[2] - 1
+for(i in 1:n) {
+        pml.training[,i] <- extract_numeric(pml.training[,i])
+}
+
+i = 1
+n <- dim(pml.testing)[2] - 1
+for(i in 1:n) {
+        pml.testing[,i] <- extract_numeric(pml.testing[,i])
+}
+
+## Create training, testing and validation data sets
+
+set.seed(1234)
+inBuild <- createDataPartition(pml.training$classe, p = 0.7, list = FALSE)
+BuildData <- pml.training[inBuild,]; validation <- pml.training[-inBuild,]
+inTrain <- createDataPartition(BuildData$classe, p = 0.7, list = FALSE)
+training <- BuildData[inTrain,]; testing <- BuildData[-inTrain,]
+```
+
+### Linear Discriminant Analysis Model "lda"
+```{r LinearDiscriminantAnalysis, cache=TRUE, message=FALSE}
+lda.fit <- train(classe ~ ., data = training, method = "lda", preProcess = c("center", "scale"))
+```
+
+### Random Forests Model "rf"
+```{r RandomForest, cache=TRUE, message=FALSE}
+rf.fit <- train(classe ~ ., data = training, method = "rf", preProcess = c("center", "scale"))
+```
+
+### Boosting with trees Model "gbm"
+```{r BoostingWithTrees, cache=TRUE, message=FALSE}
+gbm.fit <- train(classe ~ ., data = training, method = "gbm",
+                 preProcess = c("center", "scale"), verbose = FALSE)
+```
+
+### Combine predictions
+
+```{r test.pred, cache=TRUE}
+## combine predictions into a data.frame
+
+pred.lda.test <- predict(lda.fit, testing)
+pred.rf.test <- predict(rf.fit, testing)
+pred.gbm.test <- predict(gbm.fit, testing)
+pred.comb.test <- data.frame(pred.lda = pred.lda.test,
+                             pred.rf = pred.rf.test,
+                             pred.gbm = pred.gbm.test, classe = testing$classe)
+```
+
+
+### Build combined model
+```{r CombinedModel, cache=TRUE, message=FALSE}
+comb.fit <- train(classe ~ ., data = pred.comb.test, method = "rf")
+```
+
+#### Validate the model accuracy and root mean square error (RMSE) - test data
+
+```{r Table.Test.Results, cache=TRUE, echo=FALSE}
+## predict outcome and calculate accuracy/RMSE in respect of each model
+lda.accuracy <- sum(pred.lda.test == testing$classe) / nrow(testing)
+lda.RMSE <- sqrt((sum(as.numeric(pred.lda.test) - as.numeric(testing$classe))^2) / nrow(testing))
+
+rf.accuracy <- sum(pred.rf.test == testing$classe) / nrow(testing)
+rf.RMSE <- sqrt((sum(as.numeric(pred.rf.test) - as.numeric(testing$classe))^2) / nrow(testing))
+
+gbm.accuracy <- sum(pred.gbm.test == testing$classe) / nrow(testing)
+gbm.RMSE <- sqrt((sum(as.numeric(pred.gbm.test) - as.numeric(testing$classe))^2) / nrow(testing))
+
+pred.test <- predict(comb.fit, pred.comb.test)
+comb.accuracy <- sum(pred.test == pred.comb.test$classe) / nrow(pred.comb.test)
+comb.RMSE <- sqrt((sum(as.numeric(pred.test) - as.numeric(pred.comb.test$classe))^2) /
+                          nrow(pred.comb.test))
+
+Acc.RMSE <- rbind(Accuracy = c(lda = lda.accuracy, rf = rf.accuracy,
+                             gbm = gbm.accuracy, Combined = comb.accuracy),
+              RMSE = c(lda.RMSE, rf.RMSE, gbm.RMSE, comb.RMSE))
+Acc.RMSE
+```
+
+#### Cross validate the model accuracy and root mean square error (RMSE) - validation data
+
+```{r Table.Val.Results, echo=FALSE, message=FALSE}
+## predict on validation data
+
+pred.lda.val <- predict(lda.fit, validation)
+pred.rf.val <- predict(rf.fit, validation)
+pred.gbm.val <- predict(gbm.fit, validation)
+
+## combine the predictions on validation data set
+
+pred.comb.val <- data.frame(pred.lda = pred.lda.val,
+                            pred.rf = pred.rf.val,
+                            pred.gbm = pred.gbm.val)
+
+val.pred <- predict(comb.fit, pred.comb.val)        ## predict on combined validation data set
+
+## Calculate the accuracy and RMSE
+
+val.lda.accuracy <- sum(pred.lda.val == validation$classe) / nrow(validation)
+val.rf.accuracy <- sum(pred.rf.val == validation$classe) / nrow(validation)
+val.gbm.accuracy <- sum(pred.gbm.val == validation$classe) / nrow(validation)
+val.accuracy <- sum(val.pred == validation$classe) / nrow(validation)
+val.lda.RMSE <- sqrt((sum(as.numeric(pred.lda.val) - as.numeric(validation$classe))^2) /
+                          nrow(validation))
+val.rf.RMSE <- sqrt((sum(as.numeric(pred.rf.val) - as.numeric(validation$classe))^2) /
+                          nrow(validation))
+val.gbm.RMSE <- sqrt((sum(as.numeric(pred.gbm.val) - as.numeric(validation$classe))^2) /
+                          nrow(validation))
+val.RMSE <- sqrt((sum(as.numeric(val.pred) - as.numeric(validation$classe))^2) /
+                          nrow(validation))
+## Tabulate the model accuracy and root mean square error (RMSE) on validation data
+
+Acc.val.RMSE <- rbind(Accuracy = c(lda = val.lda.accuracy, rf = val.rf.accuracy,
+                               gbm = val.gbm.accuracy, Combined = val.accuracy),
+                  RMSE = c(val.lda.RMSE, val.rf.RMSE, val.gbm.RMSE, val.RMSE))
+Acc.val.RMSE
+```
+
+#### Reasons for model selection
+
+##### 1.        Linear Discriminant Analysis (lda)
+
+- LDA is closely related to analysis of variance (ANOVA) and regression analysis.
+- LDA is also closely related to principal component analysis (PCA) and factor analysis.
+- Easy to interpret.
+
+##### 2.        Random Forest (rf)
+
+- It is one of the most accurate learning algorithms available. For many data sets, it produces a highly accurate classifier.
+- It runs efficiently on large databases.
+- It can handle thousands of input variables without variable deletion.
+- It generates an internal unbiased estimate of the generalization error as the forest building progresses.
+- It has an effective method for estimating missing data and maintains accuracy when a large proportion of the data are missing.
+- It has methods for balancing error in class population unbalanced data sets.
+- It offers an experimental method for detecting variable interactions.
+
+##### 3.        Boosting with trees (gbm)
+
+- Boosted regression trees incorporate important advantages of tree-based methods, handling different types of predictor variables and accommodating missing data.
+- There is no need for prior data transformation or elimination of outliers.
+- Can fit complex nonlinear relationships.
+- Automatically handles interaction effects between predictors.
+
+##### 4.        Combining prediction models
+
+- I have selected again the method of random forest (rf) in train function to fit the combined model for further prediction of outcome variable (classe) for the combined data frame of all three prediction models along with the true values of variable "classe" for data set "testing".
+- It is one of the most accurate learning algorithms available and runs efficiently on large databases.
+- The table of accuracy levels and plots for all four models support my choice.
+
+```{r AccuracyComparison, echo=FALSE}
+Acc.test.val <- rbind(Test = c(lda = lda.accuracy, rf = rf.accuracy,
+                             gbm = gbm.accuracy, Combined = comb.accuracy),
+                      Validation = c(val.lda.accuracy, val.rf.accuracy,
+                               val.gbm.accuracy, val.accuracy))
+Acc.test.val
+```
+
+
+#### Plot Model Predictions
+
+
+```{r test.plot, echo=FALSE, fig.height=7, fig.width=9, fig.align='center', message=FALSE}
+library(gridExtra)
+p1 <- qplot(pred.lda.test, data = testing, fill = classe, geom = "bar", xlab = "lda Predictions")
+p2<- qplot(pred.rf.test, data = testing, fill = classe, geom = "bar", xlab = "rf Predictions")
+p3 <- qplot(pred.gbm.test, data = testing, fill = classe, geom = "bar", xlab = "gbm Predictions")
+p4 <- qplot(pred.test, data = pred.comb.test, fill = classe, geom = "bar",xlab = "Combined Predictions")
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2,
+             main = "Fig 1: Classification / Misclassification - Test Data")
+```
+
+
+```{r val.plot, echo=FALSE, fig.height=7, fig.width=9, fig.align='center', message=FALSE}
+p5 <- qplot(pred.lda.val, data = validation, fill = classe, geom = "bar", xlab = "lda Predictions")
+p6 <- qplot(pred.rf.val, data = validation, fill = classe, geom = "bar", xlab = "rf Predictions")
+p7 <- qplot(pred.gbm.val, data = validation, fill = classe, geom = "bar", xlab = "gbm Predictions")
+p8 <- qplot(val.pred, data = validation, fill = classe, geom = "bar",xlab = "Combined Predictions")
+grid.arrange(p5, p6, p7, p8, nrow = 2, ncol = 2,
+             main = "Fig 2: Classification / Misclassification - Validation Data")
+```
+
+
+#### In-sample and out-of-sample error rate
+
+- **In my opinion in-sample error rate is the error rate in respect of incorrect predictions made by the model on test data set; while out-of-sample error rate is eventually the error rate in respect of incorrect predictions made by the model on validation data set. In other words, in-sample error rate is the result of model validation and out-of-sample error rate is the result of cross-validation.**
+
+```{r out-of-sample-error, echo=FALSE}
+out_of_sample_Error <- rbind(Validation = paste0("lda = ", round((1-val.lda.accuracy) * 100, 2), "%"),
+                                      paste0("rf = ", round((1-val.rf.accuracy) * 100, 2), "%"),
+                                      paste0("gbm = ", round((1-val.gbm.accuracy) * 100, 2), "%"),
+                                      paste0("Combined = ", round((1-val.accuracy) * 100, 2), "%"))
+out_of_sample_Error
+```
+
+#### Write the case predictions
+
+- Predict the outcome on 20 different cases of data set "pml.testing".
+- Create one file for each submission.
+```{r Prediction.Write-up, echo=FALSE}
+pred.lda.caess <- predict(lda.fit, pml.testing)
+pred.rf.caess <- predict(rf.fit, pml.testing)
+pred.gbm.caess <- predict(gbm.fit, pml.testing)
+
+pred.comb.cases <- data.frame(pred.lda = pred.lda.caess,
+                              pred.rf = pred.rf.caess,
+                              pred.gbm = pred.gbm.caess)
+pred.cases <- predict(comb.fit, pred.comb.cases)
+
+## Define a function to write on file for each case
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+## Write one file for each case
+
+pml_write_files(pred.cases)
+```
+

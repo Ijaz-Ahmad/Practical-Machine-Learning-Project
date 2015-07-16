@@ -139,7 +139,7 @@ pred.comb.test <- data.frame(pred.treebag = pred.treebag.test,
 
 ```{r CombinedModel, cache=TRUE, message=FALSE}
 ## Bulid combined model
-comb.fit <- train(classe ~ ., data = pred.comb.test, method = "rf")
+comb.fit <- train(classe ~ ., data = pred.comb.test, method = "gbm")
 ```
 
 #### Validate the model accuracy and root mean square error (RMSE) - test data
@@ -239,7 +239,8 @@ Acc.val.RMSE
 
 - I have selected again the method of random forest (rf) in train function to fit the combined model for further prediction of outcome variable (classe) for the combined data frame of all three prediction models along with the true values of variable "classe" for data set "testing".
 - It is one of the most accurate learning algorithms available and runs efficiently on large databases.
-- The table of accuracy levels and plots for all four models support my choice.
+
+#### The table of accuracy levels and plots for all four models still support the choice Random Forest Model.
 
 ```{r AccuracyComparison, echo=FALSE}
 Acc.test.val <- rbind(Test = c(treebag = treebag.accuracy, rf = rf.accuracy,
@@ -252,7 +253,7 @@ Acc.test.val
 
 #### Plot Model Predictions
 
-- The misclassified portion of data in respect of each model is almost invisible because of negligible in-sample and out-of-sample error rate.
+- The miss classified portion of data in respect of each model is almost invisible because of negligible in-sample and out-of-sample error rate.
 
 ```{r test.plot, echo=FALSE, fig.height=7, fig.width=9, fig.align='center', message=FALSE}
 library(gridExtra)
@@ -290,8 +291,9 @@ Error_Rate <- rbind(in_sample = c(treebag = paste0(round((1-treebag.accuracy) * 
                                       paste0(round((1-val.accuracy) * 100, 2), "%")))
 ```
 
-- In my opinion in-sample error rate is the error rate in respect of incorrect predictions made by the model on test data set; while out-of-sample error rate is eventually the error rate in respect of incorrect predictions made by the model on validation data set. In other words, in-sample error rate is the result of model validation and out-of-sample error rate is the result of cross-validation.
-- Out-of-sample error rate for each model is:
+- In my opinion in-sample error rate is the error rate in respect of incorrect predictions made by the model on test data set; while out-of-sample error rate is eventually the error rate in respect of incorrect predictions made by the model on validation data set. In other words, in-sample error rate is the result of model's validation and out-of-sample error rate is the result of model's cross-validation.
+- **Random Forest Model** has produced least out-of-sample error rate and is, therefore, our final model.
+
 ```{r ErrorRates, echo=FALSE}
 print(Error_Rate, quote = FALSE)
 ```
@@ -302,17 +304,8 @@ print(Error_Rate, quote = FALSE)
 - Predict the outcome on 20 different cases of data set "pml.testing".
 - Create one file for each case submission.
 ```{r Prediction.Write-up, echo=FALSE}
-pred.treebag.caess <- predict(treebag.fit, pml.testing)
-pred.rf.caess <- predict(rf.fit, pml.testing)
-pred.gbm.caess <- predict(gbm.fit, pml.testing)
 
-pred.comb.cases <- data.frame(pred.treebag = pred.treebag.caess,
-                              pred.rf = pred.rf.caess,
-                              pred.gbm = pred.gbm.caess)
-pred.cases <- predict(comb.fit, pred.comb.cases)
-
-## Define a function to write on file for each case
-
+pred.rf.cases <- predict(rf.fit, pml.testing)
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
@@ -323,6 +316,6 @@ pml_write_files = function(x){
 
 ## Write one file for each case
 
-pml_write_files(pred.cases)
+pml_write_files(pred.rf.cases)
 ```
 

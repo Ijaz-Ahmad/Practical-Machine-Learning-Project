@@ -1,7 +1,7 @@
 ---
 title: "Weight Lifting Exercises - Class Prediction"
 author: "Ijaz Ahmad"
-date: "16 July 2015"
+date: "17 July 2015"
 output: html_document
 ---
 
@@ -139,7 +139,7 @@ pred.comb.test <- data.frame(pred.treebag = pred.treebag.test,
 
 ```{r CombinedModel, cache=TRUE, message=FALSE}
 ## Bulid combined model
-comb.fit <- train(classe ~ ., data = pred.comb.test, method = "gbm")
+comb.fit <- train(classe ~ ., data = pred.comb.test, method = "rf")
 ```
 
 #### Validate the model accuracy and root mean square error (RMSE) - test data
